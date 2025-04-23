@@ -155,7 +155,7 @@ class FashionMNISTMLPTrainer(MLPTrainer):
     def create_dataloaders(self):
         transform = transforms.Compose([transforms.ToTensor()])
         FashionMNIST_data_train = torchvision.datasets.FashionMNIST(
-            self.data_dir, train=True, transform=transform, download=False)
+            self.data_dir, train=True, transform=transform, download=True)
 
         train_set, val_set = torch.utils.data.random_split(
             FashionMNIST_data_train, [50000, 10000])
