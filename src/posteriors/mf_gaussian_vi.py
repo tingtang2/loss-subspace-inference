@@ -3,6 +3,7 @@
 import math
 
 import torch
+
 from utils import extract_parameters
 from utils import set_weights_old as set_weights
 
@@ -91,15 +92,12 @@ class ELBO(object):
         self.criterion = criterion
         self.num_samples = num_samples
         self.temperature = temperature
-        #print("In ELBO, temperature:", temperature)
-        #print("In ELBO, num_samples:", num_samples)
 
     def __call__(self, model, input, target):
 
-        nll, output, _ = self.criterion(model, input, target)
+        nll, output, _ = self.criterion(model(input), target)
         kl = model.compute_kl() / self.num_samples
         kl *= self.temperature
         loss = nll + kl
-        #loss = nll
 
         return loss, output, {'nll': nll.item(), 'kl': kl.item()}
