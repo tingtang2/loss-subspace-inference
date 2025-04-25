@@ -1,13 +1,81 @@
+import itertools
 import math
 import time
+from collections import defaultdict
 
 import numpy as np
 import tabulate
 import torch
+import tqdm
+
+from models.mlp import NN
 from posteriors.mf_gaussian_vi import ELBO, VIModel
 from posteriors.proj_model import SubspaceModel
-from torch import nn
 from trainers.base_trainer import BaseTrainer
+
+
+def train_epoch(loader,
+                model,
+                criterion,
+                optimizer,
+                cuda=True,
+                regression=False,
+                verbose=False,
+                subset=None):
+    loss_sum = 0.0
+    stats_sum = defaultdict(float)
+    correct = 0.0
+    verb_stage = 0
+
+    num_objects_current = 0
+    num_batches = len(loader)
+
+    model.train()
+
+    if subset is not None:
+        num_batches = int(num_batches * subset)
+        loader = itertools.islice(loader, num_batches)
+
+    if verbose:
+        loader = tqdm.tqdm(loader, total=num_batches)
+
+    for i, (input, target) in enumerate(loader):
+        if cuda:
+            input = input.cuda(non_blocking=True)
+            target = target.cuda(non_blocking=True)
+
+        input = input.reshape(input.size(0), 784)
+        loss, output, stats = criterion(model, input, target)
+
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+        loss_sum += loss.data.item() * input.size(0)
+        for key, value in stats.items():
+            stats_sum[key] += value * input.size(0)
+
+        if not regression:
+            pred = output.data.argmax(1, keepdim=True)
+            correct += pred.eq(target.data.view_as(pred)).sum().item()
+
+        num_objects_current += input.size(0)
+
+        if verbose and 10 * (i + 1) / num_batches >= verb_stage + 1:
+            print('Stage %d/10. Loss: %12.4f. Acc: %6.2f' %
+                  (verb_stage + 1, loss_sum / num_objects_current,
+                   correct / num_objects_current * 100.0))
+            verb_stage += 1
+
+    return {
+        'loss': loss_sum / num_objects_current,
+        'accuracy':
+        None if regression else correct / num_objects_current * 100.0,
+        'stats': {
+            key: value / num_objects_current
+            for key, value in stats_sum.items()
+        }
+    }
 
 
 def flatten(lst):
@@ -88,6 +156,10 @@ class VITrainer(BaseTrainer):
         mean, var, cov_factor = self.get_subspace_mean_covar()
 
         vi_model = VIModel(
+            base=NN(input_dim=self.data_dim,
+                    hidden_dim=self.hidden_size,
+                    out_dim=self.out_dim,
+                    dropout_prob=self.dropout_prob).to(self.device),
             subspace=SubspaceModel(mean.to(self.device),
                                    cov_factor.to(self.device)),
             init_inv_softplus_sigma=math.log(math.exp(self.init_sd) - 1.0),
@@ -108,19 +180,16 @@ class VITrainer(BaseTrainer):
 
     def fit_posterior(self, vi_model, elbo):
         #optimizer = torch.optim.Adam([param for param in vi_model.parameters()], lr=0.01)
-        self.optimizer = torch.optim.SGD(
-            [param for param in vi_model.parameters()],
-            lr=self.learning_rate,
-            momentum=0.9)
+        optimizer = torch.optim.SGD([param for param in vi_model.parameters()],
+                                    lr=self.learning_rate,
+                                    momentum=0.9)
         columns = ['ep', 'acc', 'loss', 'kl', 'nll', 'sigma_1', 'time']
 
         epoch = 0
-        self.base_model = self.model
-        self.model = vi_model
-        self.criterion = elbo
         for epoch in range(self.epochs):
             time_ep = time.time()
-            train_res = self.train_epoch(self.train_loader)
+            train_res = train_epoch(self.train_loader, vi_model, elbo,
+                                    optimizer)
             time_ep = time.time() - time_ep
             sigma_1 = torch.nn.functional.softplus(
                 vi_model.inv_softplus_sigma.detach().cpu())[0].item()

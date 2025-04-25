@@ -6,6 +6,7 @@ from datetime import date
 import torch
 from torch import nn
 from torch.optim import Adam, AdamW
+
 from trainers.mlp_trainer import (ESSFashionMNISTSimplexSubspaceMLPTrainer,
                                   FashionMNISTMLPTrainer,
                                   FashionMNISTSimplexSubspaceMLPTrainer,
@@ -109,6 +110,7 @@ def main() -> int:
     # perform experiment n times
     for iter in range(configs['num_repeats']):
         if configs['infer_posterior_only']:
+            trainer.create_dataloaders()
             trainer.load_model(iter)
             trainer.fit_and_eval_posterior()
         else:

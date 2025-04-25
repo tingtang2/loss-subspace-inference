@@ -3,6 +3,7 @@
 import math
 
 import torch
+
 from utils import extract_parameters
 from utils import set_weights_old as set_weights
 
@@ -20,7 +21,7 @@ class VIModel(torch.nn.Module):
                  **kwargs):
         super(VIModel, self).__init__()
 
-        self.base_model = base(*args, **kwargs)
+        self.base_model = base
         self.base_params = extract_parameters(self.base_model)
 
         self.subspace = subspace
@@ -94,7 +95,8 @@ class ELBO(object):
 
     def __call__(self, model, input, target):
 
-        nll, output, _ = self.criterion(model(input), target)
+        output = model(input)
+        nll = self.criterion(output, target)
         kl = model.compute_kl() / self.num_samples
         kl *= self.temperature
         loss = nll + kl

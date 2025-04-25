@@ -2,11 +2,12 @@ import logging
 import random
 
 import torch
-from models.mlp import NN, SubspaceNN
 from torch import nn
 from torch.distributions.exponential import Exponential
 from torch.utils.data import DataLoader
 from tqdm import trange
+
+from models.mlp import NN, SubspaceNN
 from trainers.base_trainer import BaseTrainer
 from trainers.data_trainer import FashionMNISTTrainer
 from trainers.posterior_trainer import ESSTrainer, VITrainer

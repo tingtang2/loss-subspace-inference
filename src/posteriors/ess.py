@@ -2,6 +2,7 @@
 
 import numpy as np
 import torch
+
 from posteriors.elliptical_slice import elliptical_slice, slice_sample
 from posteriors.proj_model import ProjectedModel
 
