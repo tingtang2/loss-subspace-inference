@@ -6,14 +6,17 @@ from datetime import date
 import torch
 from torch import nn
 from torch.optim import Adam, AdamW
-
-from trainers.mlp_trainer import (FashionMNISTMLPTrainer,
+from trainers.mlp_trainer import (ESSFashionMNISTSubspaceMLPTrainer,
+                                  FashionMNISTMLPTrainer,
                                   FashionMNISTSimplexSubspaceMLPTrainer,
-                                  FashionMNISTSubspaceMLPTrainer)
+                                  FashionMNISTSubspaceMLPTrainer,
+                                  MFVIFashionMNISTSubspaceMLPTrainer)
 
 arg_trainer_map = {
     'f_mnist_mlp': FashionMNISTMLPTrainer,
     'f_mnist_subspace_mlp': FashionMNISTSubspaceMLPTrainer,
+    'mfvi_f_mnist_subspace_mlp': MFVIFashionMNISTSubspaceMLPTrainer,
+    'ess_f_mnist_subspace_mlp': ESSFashionMNISTSubspaceMLPTrainer,
     'f_mnist_simplex_subspace_mlp': FashionMNISTSimplexSubspaceMLPTrainer
 }
 arg_optimizer_map = {'adamW': AdamW, 'adam': Adam}

@@ -3,7 +3,6 @@
 import math
 
 import torch
-
 from utils import extract_parameters
 from utils import set_weights_old as set_weights
 

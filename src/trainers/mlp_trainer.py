@@ -2,14 +2,14 @@ import logging
 import random
 
 import torch
+from models.mlp import NN, SubspaceNN
 from torch import nn
 from torch.distributions.exponential import Exponential
 from torch.utils.data import DataLoader
 from tqdm import trange
-
-from models.mlp import NN, SubspaceNN
 from trainers.base_trainer import BaseTrainer
 from trainers.data_trainer import FashionMNISTTrainer
+from trainers.posterior_trainer import ESSTrainer, VITrainer
 
 
 class MLPTrainer(BaseTrainer):
@@ -130,6 +130,11 @@ class MLPTrainer(BaseTrainer):
 
             if early_stopping_counter == self.early_stopping_threshold:
                 break
+
+        # fit a posterior to subspace
+        # TODO: Fill in here
+        if 'mfvi' or 'ess' in self.name:
+            self.fit_and_eval_posterior()
 
 
 class SubspaceMLPTrainer(MLPTrainer):
@@ -363,6 +368,34 @@ class FashionMNISTSubspaceMLPTrainer(SubspaceMLPTrainer, FashionMNISTTrainer):
 
         self.data_dim = 784
         self.out_dim = 10
+
+
+class MFVIFashionMNISTSubspaceMLPTrainer(VITrainer, SubspaceMLPTrainer,
+                                         FashionMNISTTrainer):
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+
+        self.name = 'mfvi_subspace_vanilla_mlp'
+        self.early_stopping_threshold = 10
+
+        self.data_dim = 784
+        self.out_dim = 10
+        self.n_models = 2
+
+
+class ESSFashionMNISTSubspaceMLPTrainer(ESSTrainer, SubspaceMLPTrainer,
+                                        FashionMNISTTrainer):
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+
+        self.name = 'ess_subspace_vanilla_mlp'
+        self.early_stopping_threshold = 10
+
+        self.data_dim = 784
+        self.out_dim = 10
+        self.n_models = 2
 
 
 class FashionMNISTSimplexSubspaceMLPTrainer(SimplexSubspaceMLPTrainer,
