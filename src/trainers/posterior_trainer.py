@@ -38,62 +38,51 @@ class VITrainer(BaseTrainer):
     def get_subspace_mean_covar(self):
         # TODO figure out what to do here, maybe just start with the end points and the mid point?
         # Could always sample more
-        self.mean = torch.zeros(
-            sum(param.numel() for param in self.model.parameters()))
-        self.sq_mean = torch.zeros(
-            sum(param.numel() for param in self.model.parameters()))
-        self.n_models = 2
+        curve_parameters = list(self.model.parameters())
+        w = []
 
-        endpoint_vectors = [torch.zeros(), torch.zeros()]
-        for j, (name, m) in enumerate(self.model.named_modules()):
-            if (isinstance(m, nn.Linear) or isinstance(m, nn.Embedding)):
-                vi = self.get_weight(m, 0)
-                vj = self.get_weight(m, 1)
-                endpoint_vectors[0][j] = vi
-                endpoint_vectors[1][j] = vj
-                self.mean[j] = torch.mean(
-                    torch.tensor([vi, vj]).to(self.device))
-                self.sq_mean[j] = torch.mean(
-                    torch.tensor([vi.pow(2), vj.pow(2)]).to(self.device))
+        w.append(
+            np.concatenate([
+                p.data.cpu().numpy().ravel() for p in [
+                    curve_parameters[0], curve_parameters[1],
+                    curve_parameters[4], curve_parameters[5]
+                ]
+            ]))
+        w.append(
+            np.concatenate([
+                p.data.cpu().numpy().ravel() for p in [
+                    curve_parameters[2], curve_parameters[1],
+                    curve_parameters[6], curve_parameters[5]
+                ]
+            ]))
+        w.append(
+            np.concatenate([
+                p.data.cpu().numpy().ravel() for p in [
+                    curve_parameters[3], curve_parameters[1],
+                    curve_parameters[7], curve_parameters[5]
+                ]
+            ]))
 
-        checkpoint = torch.load(args.checkpoint)
-        num_parameters = sum([p.numel() for p in model.parameters()])
-        w = np.zeros((3, num_parameters))
-
-        for i in range(3):
-            offset = 0
-            for name, param in model.named_parameters():
-
-                size = param.numel()
-
-                if 'net.%s_1' % name in checkpoint['model_state']:
-                    w[i, offset:offset + size] = checkpoint['model_state'][
-                        'net.%s_%d' % (name, i)].cpu().numpy().ravel()
-                else:
-                    tokens = name.split('.')
-                    name_fixed = '.'.join(tokens[:3] + tokens[4:])
-                    w[i, offset:offset + size] = checkpoint['model_state'][
-                        'net.%s_%d' % (name_fixed, i)].cpu().numpy().ravel()
-                offset += size
-
-        w[1] = 0.25 * (w[0] + w[2]) + 0.5 * w[1]
-
-        mean = np.mean(w, axis=0)
         u = w[2] - w[0]
-        du = np.linalg.norm(u)
+        dx = np.linalg.norm(u)
+        u /= dx
 
         v = w[1] - w[0]
-        v -= u / du * np.sum(u / du * v)
-        dv = np.linalg.norm(v)
+        v -= np.dot(u, v) * u
+        dy = np.linalg.norm(v)
+        v /= dy
 
-        u /= math.sqrt(3.0)
-        v /= 1.5
+        # u /= math.sqrt(3.0)
+        # v /= 1.5
 
         cov_factor = np.vstack((u[None, :], v[None, :]))
 
-        return self.mean.clone(), torch.clamp(
-            self.sq_mean - self.mean**2,
-            self.var_clamp).clone(), cov_factor.clone()
+        mean = np.mean(w, axis=0)
+        sq_mean = np.mean(np.square(w), axis=0)
+
+        return torch.FloatTensor(mean), torch.clamp(
+            torch.FloatTensor(sq_mean) - torch.FloatTensor(mean**2),
+            self.var_clamp), torch.FloatTensor(cov_factor)
 
     def fit_and_eval_posterior(self):
         mean, var, cov_factor = self.get_subspace_mean_covar()
@@ -101,8 +90,8 @@ class VITrainer(BaseTrainer):
         vi_model = VIModel(
             subspace=SubspaceModel(mean.to(self.device),
                                    cov_factor.to(self.device)),
-            init_inv_softplus_sigma=math.log(math.exp(self.init_std) - 1.0),
-            prior_log_sigma=math.log(self.prior_std),
+            init_inv_softplus_sigma=math.log(math.exp(self.init_sd) - 1.0),
+            prior_log_sigma=math.log(self.prior_sd),
             with_mu=self.with_mu)
 
         vi_model = vi_model.to(self.device)

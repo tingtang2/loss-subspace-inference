@@ -246,6 +246,17 @@ class SimplexSubspaceMLPTrainer(MLPTrainer):
             return m.weight
         return getattr(m, f'weight_{i}')
 
+    def load_model(self, iter):
+        self.model = SubspaceNN(input_dim=self.data_dim,
+                                hidden_dim=self.hidden_size,
+                                out_dim=self.out_dim,
+                                dropout_prob=self.dropout_prob,
+                                seed=self.seed,
+                                num_weights=3).to(self.device)
+        checkpoint = torch.load(f'{self.save_dir}models/{self.name}_{iter}.pt')
+        self.model.load_state_dict(checkpoint)
+        self.model.eval()
+
     def train_epoch(self, loader: DataLoader):
         self.model.train()
         running_loss = 0.0
@@ -370,34 +381,6 @@ class FashionMNISTSubspaceMLPTrainer(SubspaceMLPTrainer, FashionMNISTTrainer):
         self.out_dim = 10
 
 
-class MFVIFashionMNISTSubspaceMLPTrainer(VITrainer, SubspaceMLPTrainer,
-                                         FashionMNISTTrainer):
-
-    def __init__(self, **kwargs) -> None:
-        super().__init__(**kwargs)
-
-        self.name = 'mfvi_subspace_vanilla_mlp'
-        self.early_stopping_threshold = 10
-
-        self.data_dim = 784
-        self.out_dim = 10
-        self.n_models = 2
-
-
-class ESSFashionMNISTSubspaceMLPTrainer(ESSTrainer, SubspaceMLPTrainer,
-                                        FashionMNISTTrainer):
-
-    def __init__(self, **kwargs) -> None:
-        super().__init__(**kwargs)
-
-        self.name = 'ess_subspace_vanilla_mlp'
-        self.early_stopping_threshold = 10
-
-        self.data_dim = 784
-        self.out_dim = 10
-        self.n_models = 2
-
-
 class FashionMNISTSimplexSubspaceMLPTrainer(SimplexSubspaceMLPTrainer,
                                             FashionMNISTTrainer):
 
@@ -409,3 +392,33 @@ class FashionMNISTSimplexSubspaceMLPTrainer(SimplexSubspaceMLPTrainer,
 
         self.data_dim = 784
         self.out_dim = 10
+
+
+class MFVIFashionMNISTSimplexSubspaceMLPTrainer(VITrainer,
+                                                SimplexSubspaceMLPTrainer,
+                                                FashionMNISTTrainer):
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+
+        self.name = 'mfvi_simplex_subspace_vanilla_mlp'
+        self.early_stopping_threshold = 10
+
+        self.data_dim = 784
+        self.out_dim = 10
+        self.n_models = 3
+
+
+class ESSFashionMNISTSimplexSubspaceMLPTrainer(ESSTrainer,
+                                               SimplexSubspaceMLPTrainer,
+                                               FashionMNISTTrainer):
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+
+        self.name = 'ess_simplex_subspace_vanilla_mlp'
+        self.early_stopping_threshold = 10
+
+        self.data_dim = 784
+        self.out_dim = 10
+        self.n_models = 3

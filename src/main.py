@@ -6,18 +6,20 @@ from datetime import date
 import torch
 from torch import nn
 from torch.optim import Adam, AdamW
-from trainers.mlp_trainer import (ESSFashionMNISTSubspaceMLPTrainer,
+from trainers.mlp_trainer import (ESSFashionMNISTSimplexSubspaceMLPTrainer,
                                   FashionMNISTMLPTrainer,
                                   FashionMNISTSimplexSubspaceMLPTrainer,
                                   FashionMNISTSubspaceMLPTrainer,
-                                  MFVIFashionMNISTSubspaceMLPTrainer)
+                                  MFVIFashionMNISTSimplexSubspaceMLPTrainer)
 
 arg_trainer_map = {
     'f_mnist_mlp': FashionMNISTMLPTrainer,
     'f_mnist_subspace_mlp': FashionMNISTSubspaceMLPTrainer,
-    'mfvi_f_mnist_subspace_mlp': MFVIFashionMNISTSubspaceMLPTrainer,
-    'ess_f_mnist_subspace_mlp': ESSFashionMNISTSubspaceMLPTrainer,
-    'f_mnist_simplex_subspace_mlp': FashionMNISTSimplexSubspaceMLPTrainer
+    'f_mnist_simplex_subspace_mlp': FashionMNISTSimplexSubspaceMLPTrainer,
+    'mfvi_f_mnist_simplex_subspace_mlp':
+    MFVIFashionMNISTSimplexSubspaceMLPTrainer,
+    'ess_f_mnist_simplex_subspace_mlp':
+    ESSFashionMNISTSimplexSubspaceMLPTrainer
 }
 arg_optimizer_map = {'adamW': AdamW, 'adam': Adam}
 
@@ -77,6 +79,10 @@ def main() -> int:
                         default=1.0,
                         type=float,
                         help='constant for learning subspaces')
+    parser.add_argument(
+        '--infer_posterior_only',
+        action='store_true',
+        help='just do posterior inference for saved trained model')
 
     args = parser.parse_args()
     configs = args.__dict__
@@ -102,7 +108,11 @@ def main() -> int:
 
     # perform experiment n times
     for iter in range(configs['num_repeats']):
-        trainer.run_experiment(iter)
+        if configs['infer_posterior_only']:
+            trainer.load_model(iter)
+            trainer.fit_and_eval_posterior()
+        else:
+            trainer.run_experiment(iter)
 
     return 0
 
