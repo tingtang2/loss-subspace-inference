@@ -278,18 +278,21 @@ class VITrainer(BaseTrainer):
         return ens_acc, ens_nll
 
 def log_pdf(theta, subspace, model, loader, criterion, temperature, device):
-    w = subspace(torch.FloatTensor(theta))
+    w = subspace(torch.FloatTensor(theta).to(device))
     offset = 0
-    for param in model.parameters():
-        param.data.copy_(w[offset:offset + param.numel()].view(param.size()).to(device))
-        offset += param.numel()
+    for parameter in model.parameters():
+        size = np.prod(parameter.size())
+        value = w[offset:offset + size].reshape(parameter.size())
+        parameter.data.copy_(value)
+        offset += size
     model.train()
     with torch.no_grad():
         loss = 0
         for data, target in loader:
             data = data.to(device)
             target = target.to(device)
-            batch_loss, _, _ = criterion(model, data, target)
+            reshaped_x = data.reshape(data.size(0), 784)
+            batch_loss = criterion(model(reshaped_x), target)
             loss += batch_loss * data.size()[0]
     return -loss.item() / temperature
 
@@ -301,6 +304,8 @@ class ESSTrainer(BaseTrainer):
         self.num_samples = 30
         self.rank = 2
         self.prior_sd = 1.0
+        self.var_clamp = 1e-6
+        self.temperature = 1.0
     
     def oracle(self, theta, model, subspace):
         return log_pdf(
@@ -350,23 +355,26 @@ class ESSTrainer(BaseTrainer):
         dy = np.linalg.norm(v)
         v /= dy
 
-        cov_factor = np.vstack((u[None, :], v[None, :]))
 
         mean = np.mean(w, axis=0)
         sq_mean = np.mean(np.square(w), axis=0)
+        
+        cov_factor = np.vstack((u[None, :], v[None, :]))
+        coords = np.dot(cov_factor / np.sum(np.square(cov_factor), axis=1, keepdims=True), (w - mean[None, :]).T).T
+        theta = torch.FloatTensor(coords[2, :])
 
         return torch.FloatTensor(mean), torch.clamp(
             torch.FloatTensor(sq_mean) - torch.FloatTensor(mean**2),
-            self.var_clamp), torch.FloatTensor(cov_factor)
+            self.var_clamp), torch.FloatTensor(cov_factor), theta
 
     def fit_and_eval_posterior(self):
-        mean, var, cov_factor = self.get_subspace_mean_covar()
+        mean, var, cov_factor, theta = self.get_subspace_mean_covar()
 
         subspace = SubspaceModel(mean.to(self.device),
-                                   cov_factor.to(self.device))
-        self.eval_posterior(subspace)
+                                   cov_factor.to(self.device)).to(self.device)
+        self.eval_posterior(subspace, theta)
     
-    def eval_posterior(self, subspace):
+    def eval_posterior(self, subspace, theta):
         eval_model = NN(input_dim=self.data_dim,
                     hidden_dim=self.hidden_size,
                     out_dim=self.out_dim,
@@ -377,24 +385,33 @@ class ESSTrainer(BaseTrainer):
         columns = ['iter', 'log_prob', 'acc', 'nll', 'time']
 
         samples = np.zeros((self.num_samples, self.rank))
+        rng = np.random.default_rng(self.seed)
 
         for i in range(self.num_samples):
             time_sample = time.time()
-            prior_sample = np.random.normal(loc=0.0, scale=self.prior_std, size=self.rank)
-            theta, log_prob = elliptical_slice(initial_theta=theta.numpy().copy(), prior=prior_sample,
-                                                            lnpdf=self.oracle)
+            prior_sample = rng.normal(loc=0.0, scale=self.prior_sd, size=self.rank)
+            theta, log_prob = elliptical_slice(initial_theta=theta.cpu().numpy().copy(), prior=prior_sample,
+                                                            lnpdf=self.oracle, model=eval_model, subspace=subspace)
             samples[i, :] = theta
-            theta = torch.FloatTensor(theta)
+            theta = torch.FloatTensor(theta).to(self.device)
             print(theta)
             w = subspace(theta)
+            
             offset = 0
-            for param in eval_model.parameters():
-                param.data.copy_(w[offset:offset + param.numel()].view(param.size()).to(self.device))
-                offset += param.numel()
+            for parameter in eval_model.parameters():
+                size = np.prod(parameter.size())
+                value = w[offset:offset + size].reshape(parameter.size())
+                parameter.data.copy_(value)
+                offset += size
 
-            # pred_res = utils.predict(loaders['test'], model)
-            ens_predictions += pred_res['predictions']
-            targets = pred_res['targets']
+
+            with torch.no_grad():
+                for j, (x, y) in enumerate(self.valid_loader):
+                    reshaped_x = x.reshape(x.size(0), 784)
+                    y_hat: torch.tensor = eval_model(reshaped_x.to(self.device))
+                    ens_predictions = ens_predictions + y_hat.detach().cpu().numpy()
+                    targets = y.detach().cpu().numpy()
+
             time_sample = time.time() - time_sample
             values = ['%3d/%3d' % (i + 1, self.num_samples),
                     log_prob,
