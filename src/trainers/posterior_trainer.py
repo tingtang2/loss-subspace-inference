@@ -1,4 +1,5 @@
 import itertools
+import logging
 import math
 import time
 from collections import defaultdict
@@ -7,16 +8,14 @@ import numpy as np
 import tabulate
 import torch
 import tqdm
-from tqdm import trange
 from scipy.special import softmax
-
+from tqdm import trange
 
 from models.mlp import NN
+from posteriors.elliptical_slice import elliptical_slice
 from posteriors.mf_gaussian_vi import ELBO, VIModel
 from posteriors.proj_model import SubspaceModel
-from posteriors.elliptical_slice import elliptical_slice
 from trainers.base_trainer import BaseTrainer
-import logging
 
 
 def train_epoch(loader,
@@ -82,10 +81,6 @@ def train_epoch(loader,
         }
     }
 
-
-def flatten(lst):
-    tmp = [i.contiguous().view(-1, 1) for i in lst]
-    return torch.cat(tmp).view(-1)
 
 
 def nll(outputs, labels):
@@ -179,7 +174,7 @@ class VITrainer(BaseTrainer):
                     self.temperature)
 
         self.fit_posterior(vi_model, elbo)
-        self.eval_posterior(vi_model)
+        self.eval_posterior(vi_model, self.valid_loader)
 
     def fit_posterior(self, vi_model, elbo):
         #optimizer = torch.optim.Adam([param for param in vi_model.parameters()], lr=0.01)
@@ -215,7 +210,8 @@ class VITrainer(BaseTrainer):
                                       floatfmt='8.4f').split('\n')[1])
 
         logging.info(
-            f'sigma: {torch.nn.functional.softplus(vi_model.inv_softplus_sigma.detach().cpu())}')
+            f'sigma: {torch.nn.functional.softplus(vi_model.inv_softplus_sigma.detach().cpu())}'
+        )
         if self.with_mu:
             logging.info(f'mu: {vi_model.mu.detach().cpu().data}')
 
@@ -223,17 +219,18 @@ class VITrainer(BaseTrainer):
         #                       epoch,
         #                       name='vi',
         #                       state_dict=vi_model.state_dict())
-        
+
         # self.save_model(f'{self.name}_')
 
-    def eval_posterior(self, vi_model):
+    def eval_posterior(self, vi_model, loader):
         eval_model = NN(input_dim=self.data_dim,
-                    hidden_dim=self.hidden_size,
-                    out_dim=self.out_dim,
-                    dropout_prob=self.dropout_prob).to(self.device)
+                        hidden_dim=self.hidden_size,
+                        out_dim=self.out_dim,
+                        dropout_prob=self.dropout_prob).to(self.device)
 
-        ens_predictions = np.zeros((len(self.valid_loader.dataset), self.out_dim))
-        targets = np.zeros(len(self.valid_loader.dataset))
+        ens_predictions = np.zeros(
+            (len(loader.dataset), self.out_dim))
+        targets = np.zeros(len(loader.dataset))
 
         columns = ['iter ens', 'acc', 'nll']
 
@@ -247,12 +244,12 @@ class VITrainer(BaseTrainer):
                     parameter.data.copy_(value)
                     offset += size
 
-
-            with torch.no_grad():
-                for j, (x, y) in enumerate(self.valid_loader):
+                for j, (x, y) in enumerate(loader):
                     reshaped_x = x.reshape(x.size(0), 784)
-                    y_hat: torch.tensor = eval_model(reshaped_x.to(self.device))
-                    ens_predictions = ens_predictions + y_hat.detach().cpu().numpy()
+                    y_hat: torch.tensor = eval_model(reshaped_x.to(
+                        self.device))
+                    ens_predictions = ens_predictions + y_hat.detach().cpu(
+                    ).numpy()
                     targets = y.detach().cpu().numpy()
 
             values = [
@@ -272,10 +269,11 @@ class VITrainer(BaseTrainer):
         ens_predictions /= self.num_samples
         ens_acc = np.mean(np.argmax(ens_predictions, axis=1) == targets)
         ens_nll = nll(ens_predictions, targets)
-        print("Ensemble NLL:", ens_nll)
-        print("Ensemble Accuracy:", ens_acc)
+        logging.info(f'Ensemble NLL: {ens_nll}')
+        logging.info(f'Ensemble Accuracy: {ens_acc}')
 
         return ens_acc, ens_nll
+
 
 def log_pdf(theta, subspace, model, loader, criterion, temperature, device):
     w = subspace(torch.FloatTensor(theta).to(device))
@@ -306,18 +304,16 @@ class ESSTrainer(BaseTrainer):
         self.prior_sd = 1.0
         self.var_clamp = 1e-6
         self.temperature = 1.0
-    
+
     def oracle(self, theta, model, subspace):
-        return log_pdf(
-            theta,
-            subspace=subspace,
-            model=model,
-            loader=self.train_loader,
-            criterion=self.criterion,
-            temperature=self.temperature,
-            device=self.device
-        )
-    
+        return log_pdf(theta,
+                       subspace=subspace,
+                       model=model,
+                       loader=self.train_loader,
+                       criterion=self.criterion,
+                       temperature=self.temperature,
+                       device=self.device)
+
     def get_subspace_mean_covar(self):
         # TODO figure out what to do here, maybe just start with the end points and the mid point?
         # Could always sample more
@@ -355,12 +351,13 @@ class ESSTrainer(BaseTrainer):
         dy = np.linalg.norm(v)
         v /= dy
 
-
         mean = np.mean(w, axis=0)
         sq_mean = np.mean(np.square(w), axis=0)
-        
+
         cov_factor = np.vstack((u[None, :], v[None, :]))
-        coords = np.dot(cov_factor / np.sum(np.square(cov_factor), axis=1, keepdims=True), (w - mean[None, :]).T).T
+        coords = np.dot(
+            cov_factor / np.sum(np.square(cov_factor), axis=1, keepdims=True),
+            (w - mean[None, :]).T).T
         theta = torch.FloatTensor(coords[2, :])
 
         return torch.FloatTensor(mean), torch.clamp(
@@ -371,17 +368,18 @@ class ESSTrainer(BaseTrainer):
         mean, var, cov_factor, theta = self.get_subspace_mean_covar()
 
         subspace = SubspaceModel(mean.to(self.device),
-                                   cov_factor.to(self.device)).to(self.device)
-        self.eval_posterior(subspace, theta)
-    
-    def eval_posterior(self, subspace, theta):
-        eval_model = NN(input_dim=self.data_dim,
-                    hidden_dim=self.hidden_size,
-                    out_dim=self.out_dim,
-                    dropout_prob=self.dropout_prob).to(self.device)
+                                 cov_factor.to(self.device)).to(self.device)
+        self.eval_posterior(subspace, theta, self.valid_loader)
 
-        ens_predictions = np.zeros((len(self.valid_loader.dataset), self.out_dim))
-        targets = np.zeros(len(self.valid_loader.dataset))
+    def eval_posterior(self, subspace, theta, loader):
+        eval_model = NN(input_dim=self.data_dim,
+                        hidden_dim=self.hidden_size,
+                        out_dim=self.out_dim,
+                        dropout_prob=self.dropout_prob).to(self.device)
+
+        ens_predictions = np.zeros(
+            (len(loader.dataset), self.out_dim))
+        targets = np.zeros(len(loader.dataset))
         columns = ['iter', 'log_prob', 'acc', 'nll', 'time']
 
         samples = np.zeros((self.num_samples, self.rank))
@@ -389,14 +387,20 @@ class ESSTrainer(BaseTrainer):
 
         for i in range(self.num_samples):
             time_sample = time.time()
-            prior_sample = rng.normal(loc=0.0, scale=self.prior_sd, size=self.rank)
-            theta, log_prob = elliptical_slice(initial_theta=theta.cpu().numpy().copy(), prior=prior_sample,
-                                                            lnpdf=self.oracle, model=eval_model, subspace=subspace)
+            prior_sample = rng.normal(loc=0.0,
+                                      scale=self.prior_sd,
+                                      size=self.rank)
+            theta, log_prob = elliptical_slice(
+                initial_theta=theta.cpu().numpy().copy(),
+                prior=prior_sample,
+                lnpdf=self.oracle,
+                model=eval_model,
+                subspace=subspace)
             samples[i, :] = theta
             theta = torch.FloatTensor(theta).to(self.device)
             print(theta)
             w = subspace(theta)
-            
+
             offset = 0
             for parameter in eval_model.parameters():
                 size = np.prod(parameter.size())
@@ -404,29 +408,56 @@ class ESSTrainer(BaseTrainer):
                 parameter.data.copy_(value)
                 offset += size
 
-
             with torch.no_grad():
-                for j, (x, y) in enumerate(self.valid_loader):
+                for j, (x, y) in enumerate(loader):
                     reshaped_x = x.reshape(x.size(0), 784)
-                    y_hat: torch.tensor = eval_model(reshaped_x.to(self.device))
-                    ens_predictions = ens_predictions + y_hat.detach().cpu().numpy()
+                    y_hat: torch.tensor = eval_model(reshaped_x.to(
+                        self.device))
+                    ens_predictions = ens_predictions + y_hat.detach().cpu(
+                    ).numpy()
                     targets = y.detach().cpu().numpy()
 
             time_sample = time.time() - time_sample
-            values = ['%3d/%3d' % (i + 1, self.num_samples),
-                    log_prob,
-                    np.mean(np.argmax(ens_predictions, axis=1) == targets),
-                    nll(ens_predictions / (i + 1), targets),
-                    time_sample]
-            table = tabulate.tabulate([values], columns, tablefmt='simple', floatfmt='8.4f')
+            values = [
+                '%3d/%3d' % (i + 1, self.num_samples), log_prob,
+                np.mean(np.argmax(ens_predictions, axis=1) == targets),
+                nll(ens_predictions / (i + 1), targets), time_sample
+            ]
+            table = tabulate.tabulate([values],
+                                      columns,
+                                      tablefmt='simple',
+                                      floatfmt='8.4f')
             if i == 0:
-                print(table)
+                logging.info(table)
             else:
-                print(table.split('\n')[2])
+                logging.info(table.split('\n')[2])
 
         ens_predictions /= self.num_samples
         ens_acc = np.mean(np.argmax(ens_predictions, axis=1) == targets)
         ens_nll = nll(ens_predictions, targets)
-        print("Ensemble NLL:", ens_nll)
-        print("Ensemble Accuracy:", ens_acc)
+        logging.info(f'Ensemble NLL: {ens_nll}')
+        logging.info(f'Ensemble Accuracy: {ens_acc}')
+
+
+class EnsembleTrainer(BaseTrainer):
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.num_samples = 30
+        self.rank = 2
+        self.prior_sd = 1.0
+        self.var_clamp = 1e-6
+        self.temperature = 1.0
+    
+    def eval_posterior(self):
+        # load models
         
+        # eval
+        pass
+
+
+class SubspaceSamplingTrainer(BaseTrainer):
+    def eval_posterior(self):
+        # load models
+        
+        # eval
+        pass

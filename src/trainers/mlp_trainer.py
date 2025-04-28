@@ -133,8 +133,7 @@ class MLPTrainer(BaseTrainer):
                 break
 
         # fit a posterior to subspace
-        # TODO: Fill in here
-        if 'mfvi' or 'ess' in self.name:
+        if 'mfvi' in self.name or 'ess' in self.name:
             self.fit_and_eval_posterior()
 
 
@@ -366,8 +365,6 @@ class FashionMNISTMLPTrainer(MLPTrainer, FashionMNISTTrainer):
         self.name = f'vanilla_mlp_seed_{self.seed}'
         self.early_stopping_threshold = 10
 
-        self.data_dim = 784
-        self.out_dim = 10
 
 
 class FashionMNISTSubspaceMLPTrainer(SubspaceMLPTrainer, FashionMNISTTrainer):
@@ -378,8 +375,6 @@ class FashionMNISTSubspaceMLPTrainer(SubspaceMLPTrainer, FashionMNISTTrainer):
         self.name = 'subspace_vanilla_mlp'
         self.early_stopping_threshold = 10
 
-        self.data_dim = 784
-        self.out_dim = 10
 
 
 class FashionMNISTSimplexSubspaceMLPTrainer(SimplexSubspaceMLPTrainer,
@@ -391,8 +386,6 @@ class FashionMNISTSimplexSubspaceMLPTrainer(SimplexSubspaceMLPTrainer,
         self.name = 'simplex_subspace_vanilla_mlp'
         self.early_stopping_threshold = 10
 
-        self.data_dim = 784
-        self.out_dim = 10
 
 
 class MFVIFashionMNISTSimplexSubspaceMLPTrainer(VITrainer,
@@ -405,8 +398,6 @@ class MFVIFashionMNISTSimplexSubspaceMLPTrainer(VITrainer,
         self.name = 'mfvi_simplex_subspace_vanilla_mlp'
         self.early_stopping_threshold = 10
 
-        self.data_dim = 784
-        self.out_dim = 10
         self.n_models = 3
 
 
@@ -420,6 +411,4 @@ class ESSFashionMNISTSimplexSubspaceMLPTrainer(ESSTrainer,
         self.name = 'ess_simplex_subspace_vanilla_mlp'
         self.early_stopping_threshold = 10
 
-        self.data_dim = 784
-        self.out_dim = 10
         self.n_models = 3

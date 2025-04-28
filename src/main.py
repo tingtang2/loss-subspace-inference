@@ -84,6 +84,11 @@ def main() -> int:
         '--infer_posterior_only',
         action='store_true',
         help='just do posterior inference for saved trained model')
+    parser.add_argument(
+        '--eval_ensemble_test',
+        action='store_true',
+        help='evaluate posterior/ensemble on test set')
+    
 
     args = parser.parse_args()
     configs = args.__dict__
@@ -107,14 +112,19 @@ def main() -> int:
         criterion=nn.CrossEntropyLoss(reduction='sum'),
         **configs)
 
-    # perform experiment n times
-    for iter in range(configs['num_repeats']):
-        if configs['infer_posterior_only']:
-            trainer.create_dataloaders()
-            trainer.load_model(iter)
-            trainer.fit_and_eval_posterior()
-        else:
-            trainer.run_experiment(iter)
+    if configs['eval_ensemble_test']:
+            trainer.create_testloader()
+            trainer.load_ensemble_model()
+            trainer.eval_posterior(trainer.test_loader)
+    else:
+        # perform experiment n times
+        for iter in range(configs['num_repeats']):
+            if configs['infer_posterior_only']:
+                trainer.create_dataloaders()
+                trainer.load_model(iter)
+                trainer.fit_and_eval_posterior()
+            else:
+                trainer.run_experiment(iter)
 
     return 0
 
