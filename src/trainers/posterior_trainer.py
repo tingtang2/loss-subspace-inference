@@ -7,6 +7,8 @@ from collections import defaultdict
 import numpy as np
 import tabulate
 import torch
+from torch import nn
+from torch.distributions.exponential import Exponential
 import tqdm
 from scipy.special import softmax
 from tqdm import trange
@@ -80,7 +82,6 @@ def train_epoch(loader,
             for key, value in stats_sum.items()
         }
     }
-
 
 
 def nll(outputs, labels):
@@ -174,7 +175,7 @@ class VITrainer(BaseTrainer):
                     self.temperature)
 
         self.fit_posterior(vi_model, elbo)
-        self.eval_posterior(vi_model, self.valid_loader)
+        self.eval_posterior(vi_model, self.test_loader)
 
     def fit_posterior(self, vi_model, elbo):
         #optimizer = torch.optim.Adam([param for param in vi_model.parameters()], lr=0.01)
@@ -228,8 +229,7 @@ class VITrainer(BaseTrainer):
                         out_dim=self.out_dim,
                         dropout_prob=self.dropout_prob).to(self.device)
 
-        ens_predictions = np.zeros(
-            (len(loader.dataset), self.out_dim))
+        ens_predictions = np.zeros((len(loader.dataset), self.out_dim))
         targets = np.zeros(len(loader.dataset))
 
         columns = ['iter ens', 'acc', 'nll']
@@ -369,7 +369,7 @@ class ESSTrainer(BaseTrainer):
 
         subspace = SubspaceModel(mean.to(self.device),
                                  cov_factor.to(self.device)).to(self.device)
-        self.eval_posterior(subspace, theta, self.valid_loader)
+        self.eval_posterior(subspace, theta, self.test_loader)
 
     def eval_posterior(self, subspace, theta, loader):
         eval_model = NN(input_dim=self.data_dim,
@@ -377,8 +377,7 @@ class ESSTrainer(BaseTrainer):
                         out_dim=self.out_dim,
                         dropout_prob=self.dropout_prob).to(self.device)
 
-        ens_predictions = np.zeros(
-            (len(loader.dataset), self.out_dim))
+        ens_predictions = np.zeros((len(loader.dataset), self.out_dim))
         targets = np.zeros(len(loader.dataset))
         columns = ['iter', 'log_prob', 'acc', 'nll', 'time']
 
@@ -440,24 +439,107 @@ class ESSTrainer(BaseTrainer):
 
 
 class EnsembleTrainer(BaseTrainer):
+
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self.num_samples = 30
-        self.rank = 2
-        self.prior_sd = 1.0
-        self.var_clamp = 1e-6
-        self.temperature = 1.0
-    
-    def eval_posterior(self):
-        # load models
-        
-        # eval
-        pass
+
+    def eval_posterior(self, loader):
+        ens_predictions = np.zeros((len(loader.dataset), self.out_dim))
+        targets = np.zeros(len(loader.dataset))
+        columns = ['iter', 'acc', 'nll']
+
+        # load models and eval
+        for i in range(self.num_samples):
+            model = NN(input_dim=self.data_dim,
+                       hidden_dim=self.hidden_size,
+                       out_dim=self.out_dim,
+                       dropout_prob=self.dropout_prob).to(self.device)
+
+            checkpoint = torch.load(
+                f'{self.save_dir}models/{self.name}_{i}.pt')
+            model.load_state_dict(checkpoint)
+            model.eval()
+
+            with torch.no_grad():
+                for j, (x, y) in enumerate(loader):
+                    reshaped_x = x.reshape(x.size(0), 784)
+                    y_hat: torch.tensor = model(reshaped_x.to(self.device))
+                    ens_predictions = ens_predictions + y_hat.detach().cpu(
+                    ).numpy()
+                    targets = y.detach().cpu().numpy()
+
+            values = [
+                '%3d/%3d' % (i + 1, self.num_samples),
+                np.mean(np.argmax(ens_predictions, axis=1) == targets),
+                nll(ens_predictions / (i + 1), targets)
+            ]
+            table = tabulate.tabulate([values],
+                                      columns,
+                                      tablefmt='simple',
+                                      floatfmt='8.4f')
+            if i == 0:
+                logging.info(table)
+            else:
+                logging.info(table.split('\n')[2])
+
+        ens_predictions /= self.num_samples
+        ens_acc = np.mean(np.argmax(ens_predictions, axis=1) == targets)
+        ens_nll = nll(ens_predictions, targets)
+        logging.info(f'Ensemble NLL: {ens_nll}')
+        logging.info(f'Ensemble Accuracy: {ens_acc}')
 
 
 class SubspaceSamplingTrainer(BaseTrainer):
-    def eval_posterior(self):
-        # load models
-        
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.num_samples = 30
+
+    def eval_posterior(self, loader):
+        ens_predictions = np.zeros((len(loader.dataset), self.out_dim))
+        targets = np.zeros(len(loader.dataset))
+        columns = ['iter', 'acc', 'nll']
+
+        # load model
+        self.load_model(0)
+
+        dist = Exponential(rate=1)
         # eval
-        pass
+        for i in range(self.num_samples):
+            Z = dist.sample(sample_shape=(3, ))
+            Z = Z / Z.sum()
+            for m in self.model.modules():
+                if isinstance(m, nn.Linear):
+                    # add attribute for weight dimensionality and subspace dimensionality
+                    for k in range(1, 3):
+                        setattr(m, f't{k}', Z[k])
+
+            with torch.no_grad():
+                for j, (x, y) in enumerate(loader):
+                    reshaped_x = x.reshape(x.size(0), 784)
+                    y_hat: torch.tensor = self.model(reshaped_x.to(
+                        self.device))
+                    ens_predictions = ens_predictions + y_hat.detach().cpu(
+                    ).numpy()
+                    targets = y.detach().cpu().numpy()
+
+            values = [
+                '%3d/%3d' % (i + 1, self.num_samples),
+                np.mean(np.argmax(ens_predictions, axis=1) == targets),
+                nll(ens_predictions / (i + 1), targets)
+            ]
+            table = tabulate.tabulate([values],
+                                      columns,
+                                      tablefmt='simple',
+                                      floatfmt='8.4f')
+            if i == 0:
+                logging.info(table)
+            else:
+                logging.info(table.split('\n')[2])
+
+        ens_predictions /= self.num_samples
+        ens_acc = np.mean(np.argmax(ens_predictions, axis=1) == targets)
+        ens_nll = nll(ens_predictions, targets)
+        logging.info(f'Ensemble NLL: {ens_nll}')
+        logging.info(f'Ensemble Accuracy: {ens_acc}')

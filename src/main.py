@@ -7,20 +7,27 @@ import torch
 from torch import nn
 from torch.optim import Adam, AdamW
 
-from trainers.mlp_trainer import (ESSFashionMNISTSimplexSubspaceMLPTrainer,
-                                  FashionMNISTMLPTrainer,
-                                  FashionMNISTSimplexSubspaceMLPTrainer,
-                                  FashionMNISTSubspaceMLPTrainer,
-                                  MFVIFashionMNISTSimplexSubspaceMLPTrainer)
+from trainers.mlp_trainer import (
+    ESSFashionMNISTSimplexSubspaceMLPTrainer, FashionMNISTMLPTrainer,
+    FashionMNISTSimplexSubspaceMLPTrainer, FashionMNISTSubspaceMLPTrainer,
+    MFVIFashionMNISTSimplexSubspaceMLPTrainer, EnsembleFashionMNISTMLPTrainer,
+    SubspaceSamplingFashionMNISTSimplexSubspaceMLPTrainer)
 
 arg_trainer_map = {
-    'f_mnist_mlp': FashionMNISTMLPTrainer,
-    'f_mnist_subspace_mlp': FashionMNISTSubspaceMLPTrainer,
-    'f_mnist_simplex_subspace_mlp': FashionMNISTSimplexSubspaceMLPTrainer,
+    'f_mnist_mlp':
+    FashionMNISTMLPTrainer,
+    'f_mnist_subspace_mlp':
+    FashionMNISTSubspaceMLPTrainer,
+    'f_mnist_simplex_subspace_mlp':
+    FashionMNISTSimplexSubspaceMLPTrainer,
     'mfvi_f_mnist_simplex_subspace_mlp':
     MFVIFashionMNISTSimplexSubspaceMLPTrainer,
     'ess_f_mnist_simplex_subspace_mlp':
-    ESSFashionMNISTSimplexSubspaceMLPTrainer
+    ESSFashionMNISTSimplexSubspaceMLPTrainer,
+    'ensemble_f_mnist_mlp':
+    EnsembleFashionMNISTMLPTrainer,
+    'subspace_sampling_f_mnist_simplex_subspace_mlp':
+    SubspaceSamplingFashionMNISTSimplexSubspaceMLPTrainer,
 }
 arg_optimizer_map = {'adamW': AdamW, 'adam': Adam}
 
@@ -84,11 +91,12 @@ def main() -> int:
         '--infer_posterior_only',
         action='store_true',
         help='just do posterior inference for saved trained model')
-    parser.add_argument(
-        '--eval_ensemble_test',
-        action='store_true',
-        help='evaluate posterior/ensemble on test set')
-    
+    parser.add_argument('--eval_ensemble_test',
+                        action='store_true',
+                        help='evaluate posterior/ensemble on test set')
+    parser.add_argument('--eval_ensemble_val',
+                        action='store_true',
+                        help='evaluate posterior/ensemble on validation set')
 
     args = parser.parse_args()
     configs = args.__dict__
@@ -113,13 +121,16 @@ def main() -> int:
         **configs)
 
     if configs['eval_ensemble_test']:
-            trainer.create_testloader()
-            trainer.load_ensemble_model()
-            trainer.eval_posterior(trainer.test_loader)
+        trainer.create_testloader()
+        trainer.eval_posterior(trainer.test_loader)
+    elif configs['eval_ensemble_val']:
+        trainer.create_dataloaders()
+        trainer.eval_posterior(trainer.valid_loader)
     else:
         # perform experiment n times
         for iter in range(configs['num_repeats']):
             if configs['infer_posterior_only']:
+                trainer.create_testloader()
                 trainer.create_dataloaders()
                 trainer.load_model(iter)
                 trainer.fit_and_eval_posterior()

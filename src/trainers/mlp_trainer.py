@@ -10,7 +10,7 @@ from tqdm import trange
 from models.mlp import NN, SubspaceNN
 from trainers.base_trainer import BaseTrainer
 from trainers.data_trainer import FashionMNISTTrainer
-from trainers.posterior_trainer import ESSTrainer, VITrainer
+from trainers.posterior_trainer import ESSTrainer, VITrainer, EnsembleTrainer, SubspaceSamplingTrainer
 
 
 class MLPTrainer(BaseTrainer):
@@ -412,3 +412,23 @@ class ESSFashionMNISTSimplexSubspaceMLPTrainer(ESSTrainer,
         self.early_stopping_threshold = 10
 
         self.n_models = 3
+
+class EnsembleFashionMNISTMLPTrainer(EnsembleTrainer,
+                                    MLPTrainer,
+                                    FashionMNISTTrainer):
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+
+        self.name = f'vanilla_mlp_seed_{self.seed}'
+        self.early_stopping_threshold = 10
+
+class SubspaceSamplingFashionMNISTSimplexSubspaceMLPTrainer(SubspaceSamplingTrainer,
+                                            SimplexSubspaceMLPTrainer,
+                                            FashionMNISTTrainer):
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+
+        self.name = 'mfvi_simplex_subspace_vanilla_mlp'
+        self.early_stopping_threshold = 10

@@ -19,7 +19,7 @@ import argparse
 import torchvision
 import torchvision.transforms as transforms
 
-from models.mlp import NN, SubspaceNN
+from models.mlp import NN
 
 # utility functions
 
