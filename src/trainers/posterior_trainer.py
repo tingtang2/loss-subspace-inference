@@ -5,6 +5,7 @@ import time
 from collections import defaultdict
 
 import numpy as np
+import os
 import tabulate
 import torch
 from torch import nn
@@ -342,16 +343,19 @@ class ESSTrainer(BaseTrainer):
                 ]
             ]))
 
-        u = w[2] - w[0]
-        dx = np.linalg.norm(u)
-        u /= dx
-
-        v = w[1] - w[0]
-        v -= np.dot(u, v) * u
-        dy = np.linalg.norm(v)
-        v /= dy
+        w[1] = 0.25 * (w[0] + w[2]) + 0.5 * w[1]
 
         mean = np.mean(w, axis=0)
+        u = w[2] - w[0]
+        du = np.linalg.norm(u)
+
+        v = w[1] - w[0]
+        v -= u / du * np.sum(u / du * v)
+        dv = np.linalg.norm(v)
+
+        u /= math.sqrt(3.0)
+        v /= 1.5
+
         sq_mean = np.mean(np.square(w), axis=0)
 
         cov_factor = np.vstack((u[None, :], v[None, :]))
@@ -436,6 +440,14 @@ class ESSTrainer(BaseTrainer):
         ens_nll = nll(ens_predictions, targets)
         logging.info(f'Ensemble NLL: {ens_nll}')
         logging.info(f'Ensemble Accuracy: {ens_acc}')
+
+        # Save samples to file
+        np.savez(os.path.join(self.save_dir,
+                              f"ess_samples_seed_{self.seed}.npz"),
+                 samples=samples,
+                 seed=self.seed,
+                 ens_acc=ens_acc,
+                 ens_nll=ens_nll)
 
 
 class EnsembleTrainer(BaseTrainer):
