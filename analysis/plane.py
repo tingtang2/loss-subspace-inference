@@ -14,6 +14,7 @@ import argparse
 
 import torchvision
 import torchvision.transforms as transforms
+import math
 
 load_dotenv()
 
@@ -261,16 +262,18 @@ def main() -> int:
 
     print('Weight space dimensionality: %d' % w[0].shape[0])
 
+    w[1] = 0.25 * (w[0] + w[2]) + 0.5 * w[1]
+
     u = w[2] - w[0]
-    dx = np.linalg.norm(u)
-    u /= dx
+    du = np.linalg.norm(u)
 
     v = w[1] - w[0]
-    v -= np.dot(u, v) * u
-    dy = np.linalg.norm(v)
-    v /= dy
+    v -= u / du * np.sum(u / du * v)
+    dv = np.linalg.norm(v)
 
-    # print()
+    u /= math.sqrt(3.0)
+    v /= 1.5
+
     bend_coordinates = np.stack([get_xy(p, w[0], u, v) for p in w])
 
     if configs['subspace_shape'] == 'line' or configs['subspace_shape'] == 'nn':
@@ -378,7 +381,7 @@ def main() -> int:
 
     for i, alpha in enumerate(tqdm(alphas)):
         for j, beta in enumerate(betas):
-            p = w[0] + alpha * dx * u + beta * dy * v
+            p = w[0] + alpha * du * u + beta * dv * v
 
             offset = 0
             for parameter in base_model.parameters():
@@ -402,7 +405,7 @@ def main() -> int:
                 'nll'], te_res['accuracy']
 
             c = get_xy(p, w[0], u, v)
-            grid[i, j] = [alpha * dx, beta * dy]
+            grid[i, j] = [alpha * du, beta * dv]
 
             tr_loss[i, j] = tr_loss_v
             tr_nll[i, j] = tr_nll_v
@@ -429,7 +432,7 @@ def main() -> int:
                 table = table.split('\n')[2]
             print(table)
 
-    file_name = f'{configs["subspace_shape"]}_plane.npz'
+    file_name = f'{configs["subspace_shape"]}_plane_v2.npz'
     if configs['perturb']:
         file_name = f'{configs["noise"]}_perturbed_{file_name}'
 
