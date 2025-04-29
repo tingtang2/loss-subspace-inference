@@ -139,7 +139,7 @@ def main() -> int:
                                  dropout_prob=dropout_prob,
                                  seed=seed,
                                  num_weights=num_weights).to(device)
-    checkpoint = torch.load(configs['model_path'])
+    checkpoint = torch.load(configs['model_path'], map_location=device)
     curve_model.load_state_dict(checkpoint)
 
     curve_model.eval()
@@ -168,7 +168,7 @@ def main() -> int:
                             hidden_dim=hidden_size,
                             out_dim=out_dim,
                             dropout_prob=dropout_prob).to(device)
-        isolated_checkpoint = torch.load(POINT_1_PATH)
+        isolated_checkpoint = torch.load(POINT_1_PATH, map_location=device)
         isolated_model.load_state_dict(isolated_checkpoint)
 
         w.append(
@@ -217,7 +217,7 @@ def main() -> int:
                           hidden_dim=hidden_size,
                           out_dim=out_dim,
                           dropout_prob=dropout_prob).to(device)
-        second_checkpoint = torch.load(POINT_2_PATH)
+        second_checkpoint = torch.load(POINT_2_PATH, map_location=device)
 
         second_model.load_state_dict(second_checkpoint)
         w.append(
@@ -230,7 +230,7 @@ def main() -> int:
                          hidden_dim=hidden_size,
                          out_dim=out_dim,
                          dropout_prob=dropout_prob).to(device)
-        third_checkpoint = torch.load(POINT_3_PATH)
+        third_checkpoint = torch.load(POINT_3_PATH, map_location=device)
         third_model.load_state_dict(third_checkpoint)
         w.append(
             np.concatenate([
