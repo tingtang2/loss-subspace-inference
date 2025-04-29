@@ -19,7 +19,8 @@ parser.add_argument('--subspace-shape',
 
 args = parser.parse_args()
 
-file = np.load(os.path.join(args.dir, f'{args.subspace_shape}_plane.npz'))
+file = np.load(os.path.join(args.dir, f'{args.subspace_shape}_plane.npz'),
+               allow_pickle=True)
 
 matplotlib.rc('text', usetex=True)
 plt.rc('text.latex', preamble=r'\usepackage{sansmath}')
@@ -120,13 +121,14 @@ if 'perturbed' not in args.subspace_shape:
     #          c='k',
     #          label='$w(t)$',
     #          zorder=4)
-plt.plot(bend_coordinates[[0, 2], 0],
-         bend_coordinates[[0, 2], 1],
-         c='k',
-         linestyle='--',
-         dashes=(3, 4),
-         linewidth=3,
-         zorder=2)
+plt.plot(
+    bend_coordinates[[0, 2], 0],
+    bend_coordinates[[0, 2], 1],
+    c='k',
+    linestyle='-',
+    #  dashes=(3, 4),
+    linewidth=3,
+    zorder=2)
 
 if 'simplex' in args.subspace_shape:
     # 122 = 2 * curve_points(61)
@@ -177,13 +179,14 @@ if True:
     #          c='k',
     #          label='$w(t)$',
     #          zorder=4)
-plt.plot(bend_coordinates[[0, 2], 0],
-         bend_coordinates[[0, 2], 1],
-         c='k',
-         linestyle='--',
-         dashes=(3, 4),
-         linewidth=3,
-         zorder=2)
+plt.plot(
+    bend_coordinates[[0, 2], 0],
+    bend_coordinates[[0, 2], 1],
+    c='k',
+    linestyle='-',
+    #  dashes=(3, 4),
+    linewidth=3,
+    zorder=2)
 
 if 'simplex' in args.subspace_shape:
     # 122 = 2 * curve_points(61)
@@ -191,6 +194,23 @@ if 'simplex' in args.subspace_shape:
              curve_coordinates[:122, 1],
              color='black',
              alpha=0.3)
+    plt.plot(
+        bend_coordinates[[0, 1], 0],
+        bend_coordinates[[0, 1], 1],
+        c='k',
+        linestyle='-',
+        #  dashes=(3, 4),
+        linewidth=3,
+        zorder=2)
+
+    plt.plot(
+        bend_coordinates[[1, 2], 0],
+        bend_coordinates[[1, 2], 1],
+        c='k',
+        linestyle='-',
+        #  dashes=(3, 4),
+        linewidth=3,
+        zorder=2)
 
 plt.margins(0.0)
 plt.yticks(fontsize=18)
