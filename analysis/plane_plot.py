@@ -8,12 +8,11 @@ import numpy as np
 import seaborn as sns
 
 parser = argparse.ArgumentParser(description='Plane visualization')
-parser.add_argument(
-    '--dir',
-    type=str,
-    default='/gpfs/commons/home/tchen/ode_training_dynamics/save/',
-    metavar='DIR',
-    help='training directory (default: None)')
+parser.add_argument('--dir',
+                    type=str,
+                    default='',
+                    metavar='DIR',
+                    help='training directory (default: None)')
 parser.add_argument('--subspace-shape',
                     default='simplex',
                     help='shape of subspace you want to visualize')

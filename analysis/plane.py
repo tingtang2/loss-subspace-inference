@@ -8,18 +8,23 @@ from numpy.random import default_rng
 from torch import nn
 from tqdm import tqdm
 
-# adding Folder_2/subfolder to the system path
-sys.path.insert(
-    0,
-    '/gpfs/commons/home/tchen/ode_training_dynamics/de-analysis-loss-subspaces/src'
-)
-
+import os
+from dotenv import load_dotenv
 import argparse
 
 import torchvision
 import torchvision.transforms as transforms
 
-from models.mlp import NN
+load_dotenv()
+
+SRC_DIR = os.getenv('SRC_DIR')
+POINT_1_PATH = os.getenv('POINT_1_PATH')
+POINT_2_PATH = os.getenv('POINT_2_PATH')
+POINT_3_PATH = os.getenv('POINT_3_PATH')
+
+sys.path.insert(0, SRC_DIR)
+
+from models.mlp import NN, SubspaceNN
 
 # utility functions
 
@@ -90,11 +95,9 @@ def main() -> int:
     parser.add_argument('--subspace-shape',
                         default='simplex',
                         help='shape of subspace you want to visualize')
-    parser.add_argument(
-        '--model-path',
-        default=
-        '/gpfs/commons/home/tchen/ode_training_dynamics/save/models/simplex_subspace_vanilla_mlp_0.pt',
-        help='path to model weights file')
+    parser.add_argument('--model-path',
+                        default='',
+                        help='path to model weights file')
     parser.add_argument('--perturb',
                         action='store_true',
                         help='add gaussian noise to endpoints')
@@ -102,6 +105,8 @@ def main() -> int:
                         default=1.0,
                         type=float,
                         help='std parameter for perturbation noise')
+    parser.add_argument('--save_dir', help='path to saved model files')
+    parser.add_argument('--data_dir', help='path to data files')
 
     args = parser.parse_args()
     configs = args.__dict__
@@ -163,9 +168,7 @@ def main() -> int:
                             hidden_dim=hidden_size,
                             out_dim=out_dim,
                             dropout_prob=dropout_prob).to(device)
-        isolated_checkpoint = torch.load(
-            '/gpfs/commons/home/tchen/ode_training_dynamics/save/models/vanilla_mlp_seed_11202022_0.pt'
-        )
+        isolated_checkpoint = torch.load(POINT_1_PATH)
         isolated_model.load_state_dict(isolated_checkpoint)
 
         w.append(
@@ -214,9 +217,7 @@ def main() -> int:
                           hidden_dim=hidden_size,
                           out_dim=out_dim,
                           dropout_prob=dropout_prob).to(device)
-        second_checkpoint = torch.load(
-            '/gpfs/commons/home/tchen/loss_sub_space_geometry_project/loss-subspace-geometry-save/models/vanilla_mlp_1.pt'
-        )
+        second_checkpoint = torch.load(POINT_2_PATH)
 
         second_model.load_state_dict(second_checkpoint)
         w.append(
@@ -229,9 +230,7 @@ def main() -> int:
                          hidden_dim=hidden_size,
                          out_dim=out_dim,
                          dropout_prob=dropout_prob).to(device)
-        third_checkpoint = torch.load(
-            '/gpfs/commons/home/tchen/loss_sub_space_geometry_project/loss-subspace-geometry-save/models/vanilla_mlp_2.pt'
-        )
+        third_checkpoint = torch.load(POINT_3_PATH)
         third_model.load_state_dict(third_checkpoint)
         w.append(
             np.concatenate([
@@ -271,7 +270,8 @@ def main() -> int:
     dy = np.linalg.norm(v)
     v /= dy
 
-    bend_coordinates = np.stack(get_xy(p, w[0], u, v) for p in w)
+    # print()
+    bend_coordinates = np.stack([get_xy(p, w[0], u, v) for p in w])
 
     if configs['subspace_shape'] == 'line' or configs['subspace_shape'] == 'nn':
         ts = np.linspace(0.0, 1.0, curve_points)
@@ -341,12 +341,11 @@ def main() -> int:
 
     # even more configs for evaluating on FashionMNIST
 
-    data_dir = '/gpfs/commons/home/tchen/loss_sub_space_geometry_project/data/'
     batch_size = 50000
 
     transform = transforms.Compose([transforms.ToTensor()])
     FashionMNIST_data_train = torchvision.datasets.FashionMNIST(
-        data_dir, train=True, transform=transform, download=False)
+        configs['data_dir'], train=True, transform=transform, download=False)
 
     train_set, val_set = torch.utils.data.random_split(FashionMNIST_data_train,
                                                        [50000, 10000])
@@ -356,6 +355,14 @@ def main() -> int:
     valid_loader = torch.utils.data.DataLoader(val_set,
                                                batch_size=len(val_set),
                                                shuffle=False)
+    test_set = torchvision.datasets.FashionMNIST(configs['data_dir'],
+                                                 train=False,
+                                                 transform=transform,
+                                                 download=False)
+
+    test_loader = torch.utils.data.DataLoader(test_set,
+                                              batch_size=len(test_set),
+                                              shuffle=False)
 
     criterion = nn.CrossEntropyLoss(reduction='sum')
 
@@ -385,7 +392,7 @@ def main() -> int:
                           device=device,
                           criterion=criterion)
             te_res = eval(model=base_model,
-                          loader=valid_loader,
+                          loader=test_loader,
                           device=device,
                           criterion=criterion)
 
@@ -426,8 +433,7 @@ def main() -> int:
     if configs['perturb']:
         file_name = f'{configs["noise"]}_perturbed_{file_name}'
 
-    np.savez(os.path.join(
-        '/gpfs/commons/home/tchen/ode_training_dynamics/save/', file_name),
+    np.savez(os.path.join(configs['save_dir'], file_name),
              ts=ts,
              bend_coordinates=bend_coordinates,
              curve_coordinates=curve_coordinates,

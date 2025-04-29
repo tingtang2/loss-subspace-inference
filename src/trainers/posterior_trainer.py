@@ -100,7 +100,7 @@ class VITrainer(BaseTrainer):
 
         self.init_sd = 1.0
         self.prior_sd = 1.0
-        self.with_mu = False
+        self.with_mu = True
         self.temperature = 1.0
         self.num_samples = 30
         self.var_clamp = 1e-6
